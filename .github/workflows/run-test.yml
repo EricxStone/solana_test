@@ -1,0 +1,37 @@
+name: Run CI Test
+
+on: ["push", "pull_request"]
+
+jobs:
+  Test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone Source Code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang make -y
+      
+      - name: Install Cargo
+        run: |
+          curl https://sh.rustup.rs -sSf | bash -s -- -y
+          echo 'source $HOME/.cargo/env' >> $HOME/.bashrc
+          source $HOME/.cargo/env
+          rustup component add rustfmt
+          rustup update
+
+      - name: Install Solana
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.7.4/install)"
+          echo PATH="$HOME"/.local/share/solana/install/active_release/bin:"$PATH" >> $GITHUB_ENV
+      
+      - name: Build
+        run: |
+          cargo build-bpf
+      
+      - name: Run Test
+        run: |
+          cargo test-bpf

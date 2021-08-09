@@ -1,7 +1,8 @@
 use {
     assert_matches::*,
     solana_program::{
-        instruction::{AccountMeta, Instruction}
+        instruction::{AccountMeta, Instruction},
+        system_instruction::{create_account, SystemInstruction},
     },
     solana_sdk::{
         commitment_config::CommitmentConfig,
@@ -18,7 +19,7 @@ use {
 };
 use spl_escrow::{
     instruction::{
-        EscrowInstruction, EscrowInstruction::*,
+        EscrowInstruction, EscrowInstruction::*, initialize,
     },
     state::*,
 };
@@ -74,6 +75,43 @@ pub fn create_token(
     )?;
     transaction.sign(
         &[fee_payer, token],
+        recent_blockhash,
+    );
+
+    Ok(Some(transaction))
+}
+
+pub fn create_escrow_account(
+    fee_payer: &Keypair,
+    escrow_account: &Keypair,
+    owner: &Pubkey,
+    rpc_client: &RpcClient, 
+) -> CommmandResult {
+    println!("Creating escrow account {}", escrow_account.pubkey());
+
+    let minimum_balance_for_rent_exemption = rpc_client
+        .get_minimum_balance_for_rent_exemption(Escrow::LEN)?;
+
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            create_account(
+                &fee_payer.pubkey(), 
+                &escrow_account.pubkey(),
+                minimum_balance_for_rent_exemption,
+                Escrow::LEN as u64,
+                &owner
+            ),
+        ],
+        Some(&fee_payer.pubkey()),
+    );
+    let (recent_blockhash, fee_calculator) = rpc_client.get_recent_blockhash()?;
+    check_fee_payer_balance(
+        &fee_payer.pubkey(), rpc_client,
+        minimum_balance_for_rent_exemption
+            + fee_calculator.calculate_fee(&transaction.message()),
+    )?;
+    transaction.sign(
+        &[fee_payer, escrow_account],
         recent_blockhash,
     );
 
@@ -161,6 +199,34 @@ pub fn mint_token(
         fee_calculator.calculate_fee(&transaction.message()),
     )?;
     transaction.sign(&[payer, owner], recent_blockhash);
+    Ok(Some(transaction))
+}
+
+pub fn initialize_bridge(
+    program_id: &Pubkey,
+    initializer: &Keypair, 
+    initializer_send_token_account: &Pubkey, 
+    initializer_receive_token_account: &Pubkey, 
+    escrow_account: &Pubkey,
+    amount: u64,
+    rpc_client: &RpcClient,
+) -> CommmandResult {
+    let ix = initialize(
+        &program_id, 
+        &initializer.pubkey(),
+        &initializer_send_token_account, 
+        &initializer_receive_token_account, 
+        &escrow_account,
+        amount
+    )?;
+    let mut transaction = Transaction::new_with_payer(&[ix], Some(&initializer.pubkey()));
+    let (recent_blockhash, fee_calculator) = rpc_client.get_recent_blockhash()?;
+    check_fee_payer_balance(
+        &initializer.pubkey(),
+        rpc_client,
+        fee_calculator.calculate_fee(&transaction.message()),
+    )?;
+    transaction.sign(&[initializer], recent_blockhash);
     Ok(Some(transaction))
 }
 

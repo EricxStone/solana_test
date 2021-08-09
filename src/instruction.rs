@@ -1,7 +1,14 @@
 use std::convert::TryInto;
-use solana_program::program_error::ProgramError;
+use solana_program::{
+    program_error::ProgramError,
+    pubkey::Pubkey,
+    instruction::{AccountMeta, Instruction},
+    msg,
+};
 
 use crate::error::EscrowError::InvalidInstruction;
+
+use std::mem::size_of;
 
 pub enum EscrowInstruction {
 
@@ -45,6 +52,7 @@ impl EscrowInstruction {
     /// Unpacks a byte buffer into a [EscrowInstruction](enum.EscrowInstruction.html).
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
+        msg!("Rest: {:#?}", rest);
 
         Ok(match tag {
             0 => Self::InitEscrow {
@@ -65,4 +73,51 @@ impl EscrowInstruction {
             .ok_or(InvalidInstruction)?;
         Ok(amount)
     }
+
+    /// Serializes a EscrowInstruction into a byte buffer.
+    pub fn serialize(self: Self, amount: u64) -> Result<Vec<u8>, ProgramError> {
+        let mut output = Vec::with_capacity(size_of::<EscrowInstruction>());
+
+        match self {
+            Self::InitEscrow{amount:_} => {
+                output.resize(size_of::<u64>() + 1, 0);
+                output[0] = 0;
+            },
+            Self::Exchange{amount:_} => {
+                output.resize(size_of::<u64>() + 1, 0);
+                output[0] = 1;
+            }
+        }
+        #[allow(clippy::cast_ptr_alignment)]
+        let value =
+            unsafe { &mut *(&mut output[size_of::<u8>()] as *mut u8 as *mut u64) };
+        *value = amount;
+        Ok(output)
+    }
+}
+
+// Creates an 'Initialize' instruction.
+#[cfg(not(target_arch = "bpf"))]
+pub fn initialize(
+    program_id: &Pubkey, 
+    initializer: &Pubkey, 
+    initializer_send_token_account: &Pubkey, 
+    initializer_receive_token_account: &Pubkey,
+    escrow_account: &Pubkey,
+    amount: u64,
+) -> Result<Instruction, ProgramError> {
+    let data = EscrowInstruction::InitEscrow{amount}.serialize(amount)?;
+    let accounts = vec![
+        AccountMeta::new(*initializer, true),
+        AccountMeta::new(*initializer_send_token_account, false),
+        AccountMeta::new_readonly(*initializer_receive_token_account, false),
+        AccountMeta::new(*escrow_account, false),
+        AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
 }
