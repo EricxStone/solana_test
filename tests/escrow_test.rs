@@ -46,9 +46,12 @@ mod util;
 type Error = Box<dyn std::error::Error>;
 type CommmandResult = Result<Option<Transaction>, Error>;
 
+/// Tips: use Result in Test function to avoid using match function in creating and executing transactions
 #[test]
 fn test_escrow_initalization() -> Result<(), Error> {
     let program_id = Pubkey::new_unique();
+    /// Tips: create AccountSharedData to add an account to the test validator
+    /// airdrop transactions will fail because of rate limit in this test-validator
     let alice = Keypair::new();
     let alice_account_data = 
         AccountSharedData::new(10000000000000, 0, &solana_program::system_program::id());
@@ -97,6 +100,8 @@ fn test_escrow_initalization() -> Result<(), Error> {
         )?;
     }
 
+    /// Tips: In Solana, each token has a destinated token account
+
     let create_token_x_account_transaction = create_token_account(&token_x.pubkey(), &payer, &alice_token_x_account, &alice, &rpc_client)?;
     if let Some(transaction) = create_token_x_account_transaction {
         rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
@@ -112,6 +117,8 @@ fn test_escrow_initalization() -> Result<(), Error> {
             commitment_config,
         )?;
     }
+
+    /// Tips: the qty unit is # of token in mint_token instruction 
 
     let mint_token_transaction = mint_token(&token_x.pubkey(), &payer, &payer, 100000.0, &alice_token_x_account.pubkey(), &rpc_client)?;
     if let Some(transaction) = mint_token_transaction {
